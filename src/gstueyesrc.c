@@ -68,9 +68,13 @@ static GstCaps *gst_ueye_src_get_caps (GstBaseSrc * src, GstCaps * filter);
 static gboolean gst_ueye_src_set_caps (GstBaseSrc * src, GstCaps * caps);
 
 #ifdef OVERRIDE_CREATE
+	// This function will be hocked to create function of GstPushSrcClass.
+	// create () Asks the subclass to create a buffer.
 	static GstFlowReturn gst_ueye_src_create (GstPushSrc * src, GstBuffer ** buf);
 #endif
 #ifdef OVERRIDE_FILL
+	// This function will be hocked to fill function of GstPushSrcClass. 
+	// fill () Asks the subclass to fill the buffer with data.
 	static GstFlowReturn gst_ueye_src_fill (GstPushSrc * src, GstBuffer * buf);
 #endif
 
@@ -125,7 +129,7 @@ static GstStaticPadTemplate gst_ueye_src_template =
 						("{ BGR }"))
 		);
 
-// error check, use in functions where 'src' is declared and initialised
+// This macro performs error check, use in functions where 'src' is declared and initialised
 #define UEYEEXECANDCHECK(function)\
 {\
 	INT Ret = function;\
@@ -224,9 +228,16 @@ G_DEFINE_TYPE (GstUEyeSrc, gst_ueye_src, GST_TYPE_PUSH_SRC);
 static void
 gst_ueye_src_class_init (GstUEyeSrcClass * klass)
 {
+	// Bellow is apparantly something to have object oriented designs in c++. Why do people make these :/ fml
+	// Have a look at this: https://en.wikipedia.org/wiki/GObject
 	GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+	// I think this class is just in charge of setting up the plug in and essentially installing it under gstreamer.  
 	GstElementClass *gstelement_class = GST_ELEMENT_CLASS (klass);
+	// I think this class is in charge of setting up the src/element/camera. 
+	// For example: Camera iinitialization is done here. 
 	GstBaseSrcClass *gstbasesrc_class = GST_BASE_SRC_CLASS (klass);
+	// I think this class handles the thing needed to be done when the pipeline is up and running. 
+	// That is getting data from the src/element/camera
 	GstPushSrcClass *gstpushsrc_class = GST_PUSH_SRC_CLASS (klass);
 
 	GST_DEBUG_CATEGORY_INIT (GST_CAT_DEFAULT, "ueyesrc", 0,
@@ -244,16 +255,30 @@ gst_ueye_src_class_init (GstUEyeSrcClass * klass)
 			"uEye Video Source", "Source/Video",
 			"uEye Camera video source", "Paul R. Barber <paul.barber@oncology.ox.ac.uk>");
 
+	// To understand bellow have a look at https://gstreamer.freedesktop.org/data/doc/gstreamer/head/gstreamer-libs/html/GstBaseSrc.html#GstBaseSrcClass
+	// start ():  Start processing. Subclasses should open resources and prepare to produce data.
+	// Initialized the camera, enables the events, allocates memory , sets parameters like: bitperpixel, pixel clock, camera exposure, camera binning etc
 	gstbasesrc_class->start = GST_DEBUG_FUNCPTR (gst_ueye_src_start);
+	// stop (): Stop processing. Subclasses should use this to close resources.
+	// So gst_ueye_src_stop will stop live video, disbale events and then exit camera. 
 	gstbasesrc_class->stop = GST_DEBUG_FUNCPTR (gst_ueye_src_stop);
+	// get_caps (): Called to get the caps to report. 
+	// Here we are setting get_caps function pointer to gst_ueye_src_get_caps funciton. 
+	// So gstreamer calls get_caps which is pointer to gst_ueye_src_get_caps and therefore gst_ueye_src_get_caps is called. 
 	gstbasesrc_class->get_caps = GST_DEBUG_FUNCPTR (gst_ueye_src_get_caps);
+	// set_caps (): Notify subclass of changed output caps
+	// Here we are setting set_caps function pointer to gst_ueye_src_set_caps funciton. 
+	// So gstreamer calls set_caps which is pointer to gst_ueye_src_set_caps and therefore gst_ueye_src_set_caps is called. 
 	gstbasesrc_class->set_caps = GST_DEBUG_FUNCPTR (gst_ueye_src_set_caps);
 
+// To understand fill and create have a look at https://gstreamer.freedesktop.org/data/doc/gstreamer/head/gstreamer-libs/html/GstPushSrc.html
 #ifdef OVERRIDE_CREATE
+	// Sets create pointer to a funciton pointer gst_ueye_src_create.   
 	gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_ueye_src_create);
 	GST_DEBUG ("Using gst_ueye_src_create.");
 #endif
 #ifdef OVERRIDE_FILL
+	// Sets fill pointer to a funciton pointer gst_ueye_src_fill.  
 	gstpushsrc_class->fill   = GST_DEBUG_FUNCPTR (gst_ueye_src_fill);
 	GST_DEBUG ("Using gst_ueye_src_fill.");
 #endif
@@ -317,7 +342,10 @@ gst_ueye_src_class_init (GstUEyeSrcClass * klass)
 static void
 gst_ueye_src_init (GstUEyeSrc * src)
 {
-	/* set source as live (no preroll) */
+	/* 
+	Set source as live (no preroll) 
+	If the element listens to a live source, 2ed arg should be set to TRUE.
+	*/
 	gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
 
 	/* override default of BYTES to operate in time mode */
@@ -507,8 +535,7 @@ gst_ueye_src_finalize (GObject * object)
 	G_OBJECT_CLASS (gst_ueye_src_parent_class)->finalize (object);
 }
 
-static gboolean
-gst_ueye_src_start (GstBaseSrc * bsrc)
+static gboolean gst_ueye_src_start (GstBaseSrc * bsrc)
 {
 	// Start will open the device but not start it, set_caps starts it, stop should stop and close it (as v4l2src)
 
@@ -556,6 +583,7 @@ gst_ueye_src_start (GstBaseSrc * bsrc)
 	UEYEEXECANDCHECK(is_GetSensorInfo(src->hCam, &(src->SensorInfo)));
 
 	// We will use the the full sensor
+	// TODO: this is using max width and height just like we are. If too slow try to reduce the size.
 	src->nWidth = src->SensorInfo.nMaxWidth;
 	src->nHeight = src->SensorInfo.nMaxHeight;
 
@@ -563,7 +591,7 @@ gst_ueye_src_start (GstBaseSrc * bsrc)
 	//is_SetColorMode() can tell us the color mode
 	//src->pSensorInfo->nColorMode reports on a different color 'mode'
 	// We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
-	src->nBitsPerPixel = 24;
+	src->nBitsPerPixel = 24; // TODO: set this to what we want
 
 	// Alloc some buffers
 	GST_DEBUG_OBJECT (src, "is_AllocImageMem");
@@ -583,12 +611,14 @@ gst_ueye_src_start (GstBaseSrc * bsrc)
 	//is_SetHardwareGamma(src->hCam, IS_SET_HW_GAMMA_ON);  // Hardware gamma is rubbish at the low intensity range
 	// set software gamma to some value, times value by 100 and send to camera, i.e. for 1.8 send 180
 	{
+		// TODO: figure out if we need this. Ask Amirreza. 
 		INT nGamma=180;
 		is_Gamma(src->hCam, IS_GAMMA_CMD_SET, (void*)&nGamma, sizeof(nGamma));
 	}
 
 	// turn on the output 'flash' sync pulse direct from the camera
 	{
+		// TODO: Set the flash param to what we want. 
 		UINT nMode;
 		IO_FLASH_PARAMS flashParams;
 		UINT nValue;
@@ -618,6 +648,9 @@ gst_ueye_src_start (GstBaseSrc * bsrc)
 	is_SetRopEffect(src->hCam, IS_SET_ROP_MIRROR_UPDOWN, src->vflip, 0);
 	gst_ueye_set_camera_whitebalance(src);
 
+	// TODO: Add the ini file here 
+	// TODO: set the flash settings for camera here. 
+	
 	return TRUE;
 
 	fail:
@@ -629,8 +662,9 @@ gst_ueye_src_start (GstBaseSrc * bsrc)
 	return FALSE;
 }
 
-static gboolean
-gst_ueye_src_stop (GstBaseSrc * bsrc)
+// This function is called at the end i.e. when streaming is shutting down
+// stop function pointer of GstBaseSrcClass is pointing to this function. 
+static gboolean gst_ueye_src_stop (GstBaseSrc * bsrc)
 {
 	// Start will open the device but not start it, set_caps starts it, stop should stop and close it (as v4l2src)
 
@@ -646,13 +680,15 @@ gst_ueye_src_stop (GstBaseSrc * bsrc)
 	return TRUE;
 }
 
-static GstCaps *
-gst_ueye_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
+// Source: https://gstreamer.freedesktop.org/data/doc/gstreamer/head/gstreamer/html/GstCaps.html
+// Caps (capabilities) are lightweight refcounted objects describing media types. 
+static GstCaps * gst_ueye_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
 {
 	GstUEyeSrc *src = GST_UEYE_SRC (bsrc);
 	GstCaps *caps;
 
   if (src->hCam == 0) {
+	  // gst_pad_get_pad_template_caps gets the capabilities for pad 's template.
     caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (src));
   } else {
     GstVideoInfo vinfo;
@@ -687,8 +723,9 @@ gst_ueye_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
 	return caps;
 }
 
-static gboolean
-gst_ueye_src_set_caps (GstBaseSrc * bsrc, GstCaps * caps)
+
+// This is where is_CaptureVideo starts. 
+static gboolean  gst_ueye_src_set_caps (GstBaseSrc * bsrc, GstCaps * caps)
 {
 	// Start will open the device but not start it, set_caps starts it, stop should stop and close it (as v4l2src)
 
@@ -721,7 +758,8 @@ gst_ueye_src_set_caps (GstBaseSrc * bsrc, GstCaps * caps)
 	return FALSE;
 }
 
-//  This can override the push class create fn, it is the same as fill above but it forces the creation of a buffer here to copy into.
+// This overrides the push class create fucntion.
+// It is the same as fill above but it forces the creation of a buffer here to copy into.
 #ifdef OVERRIDE_CREATE
 static GstFlowReturn
 gst_ueye_src_create (GstPushSrc * psrc, GstBuffer ** buf)
