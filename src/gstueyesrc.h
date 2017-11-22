@@ -44,6 +44,9 @@ typedef enum
 
 struct _GstUEyeSrc
 {
+  /*
+  GstPushSrc class is mostly useful for elements that cannot do random access, or at least very slowly. 
+  */
   GstPushSrc base_ueye_src;
 
   // device
